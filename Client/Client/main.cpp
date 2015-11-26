@@ -6,7 +6,6 @@
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/lockfree/queue.hpp>
 
 using namespace boost::asio::ip;
 using namespace std;
@@ -102,7 +101,7 @@ void ReadFromServer(socket_ptr sock, string_ptr prompt)
 	{
 		if (sock->available())
 		{
-			bytesRead = Receive(sock, readBuf, bytesRead);
+			bytesRead = Receive(sock, readBuf, inputSize);
 			string_ptr msg(new string(readBuf, bytesRead));
 
 			messageQueue->push(msg);
@@ -114,15 +113,39 @@ void WriteLoop(socket_ptr sock, string_ptr prompt)
 {
 	char inputBuf[inputSize] = { 0 };
 	string inputMsg;
+	int messageTypeNr = 10;
+	int parsedNumber = -1;
 
 	for (;;)
 	{
 		cin.getline(inputBuf, inputSize);
-		inputMsg = /**prompt + */ (string)inputBuf/* + '\n'*/;
+		inputMsg = (string)inputBuf;
+		//inputMsg = /**prompt + */ (string)inputBuf/* + '\n'*/;
 
 		if (!inputMsg.empty())
 		{
-			sock->send_to(boost::asio::buffer(inputMsg), receiver_endpoint, 0);
+		
+			//	int offset = 0;
+		//	memcpy(inputBuf + offset, &messageTypeNr, sizeof(int));
+		//	offset += sizeof(int);
+
+		//	memcpy(inputBuf + offset, &inputMsg,inputMsg.size());
+		//	offset += inputMsg.size();
+
+		//	//		memcpy(testPackage + offset, &messagetype, sizeof(int));
+		//	//		offset += sizeof(int);
+
+		///*	memcpy(&messageTypeNr, inputBuf, sizeof(int));
+		//	cout << messageTypeNr << endl;*/
+
+
+		//	memcpy(&parsedNumber, inputBuf, sizeof(int));
+		//	cout << "The parsed number: " << parsedNumber << endl;
+
+			sock->send_to(boost::asio::buffer(
+				inputMsg.c_str(), 
+				inputMsg.size()), 
+				receiver_endpoint, 0);
 		}
 
 		if (inputMsg.find("exit") != string::npos)
@@ -136,7 +159,8 @@ void DisplayLoop(socket_ptr)
 {
 	for (;;)
 	{
-		if (!messageQueue->empty())	{
+		if (!messageQueue->empty())	
+		{
 			if (!IsOwnMessage(messageQueue->front())) {
 				cout << *(messageQueue->front()) << endl;
 			}
