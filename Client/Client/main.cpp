@@ -1,6 +1,5 @@
 //#include "Client.h"
 #include "AsyncClient.h"
-#include "TestComponent.pb.h"
 #include <string>
 #include <queue>
 #include <boost/asio.hpp>
