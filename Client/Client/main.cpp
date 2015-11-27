@@ -34,6 +34,16 @@ enum class Messages
 	Connect
 };
 
+enum class MsgType
+{
+	Connect,
+	Ping,
+	Message,
+	Snapshot,
+	Disconnect
+
+};
+
 bool IsOwnMessage(string_ptr);
 void DisplayLoop(socket_ptr); //Reads from the message queue and displays
 void ReadFromServer(socket_ptr, string_ptr); //Read message from server and push to message queue
@@ -47,6 +57,7 @@ const int inputSize = 128;
 string_ptr promptCpy;
 boost::asio::io_service ioService;
 
+int PlayerID = -1;
 
 int main(int argc, char argv[])
 {
@@ -92,6 +103,47 @@ int Receive(socket_ptr sock, char* data, size_t len)
 	return len;
 }
 
+void MoveMsgHead(char*& data, size_t& len, size_t stepSize)
+{
+	data += stepSize;
+	len -= stepSize;
+}
+
+void ParseConnect(char* data, size_t len)
+{
+	memcpy(&PlayerID, data, sizeof(int));
+	cout << "I am player: " << PlayerID << endl;
+}
+
+void ParseMsgType(char* data, size_t len)
+{
+	int messageType = -1;
+	int lengthOfMsg = -1;
+
+	memcpy(&messageType, data, sizeof(int));
+	MoveMsgHead(data, len, sizeof(int));
+	
+
+	switch (static_cast<MsgType>(messageType)) {
+	case MsgType::Connect:
+		ParseConnect(data, len);
+		break;
+	case MsgType::Ping:
+		break;	
+	case MsgType::Message:
+		break;
+	case MsgType::Snapshot:
+		break;
+	case MsgType::Disconnect:
+		break;
+	default:
+		break;
+	}
+
+
+
+}
+
 void ReadFromServer(socket_ptr sock, string_ptr prompt)
 {
 	int bytesRead = 128;
@@ -103,6 +155,7 @@ void ReadFromServer(socket_ptr sock, string_ptr prompt)
 		{
 			bytesRead = Receive(sock, readBuf, inputSize);
 			string_ptr msg(new string(readBuf, bytesRead));
+			ParseMsgType(readBuf, bytesRead);
 
 			messageQueue->push(msg);
 		}
@@ -113,38 +166,59 @@ void WriteLoop(socket_ptr sock, string_ptr prompt)
 {
 	char inputBuf[inputSize] = { 0 };
 	string inputMsg;
-	int messageTypeNr = 10;
+	int messageTypeNr = -1;
+	int lengthOfMsg = 0;
 	int parsedNumber = -1;
+	char* msg = new char[128];
 
 	for (;;)
 	{
-		cin.getline(inputBuf, inputSize);
-		inputMsg = (string)inputBuf;
+		cout << "Choose message type (0-4): " << endl;
+		cin >> inputMsg;
+
+		try
+		{
+			messageTypeNr = std::stoi(inputMsg);
+		}
+		catch (const std::exception&)
+		{
+			
+			messageTypeNr = -1;
+		}
+		
+		cout << "Type a message: " << endl;
+		cin >> inputMsg;
+
 		//inputMsg = /**prompt + */ (string)inputBuf/* + '\n'*/;
 
 		if (!inputMsg.empty())
 		{
-		
-			//	int offset = 0;
-		//	memcpy(inputBuf + offset, &messageTypeNr, sizeof(int));
-		//	offset += sizeof(int);
+			lengthOfMsg = inputMsg.size();
 
-		//	memcpy(inputBuf + offset, &inputMsg,inputMsg.size());
-		//	offset += inputMsg.size();
+			int offset = 0;
+			memcpy(inputBuf + offset, &messageTypeNr, sizeof(int));
+			offset += sizeof(int);
 
-		//	//		memcpy(testPackage + offset, &messagetype, sizeof(int));
-		//	//		offset += sizeof(int);
+			// Length of string
+			memcpy(inputBuf + offset, &lengthOfMsg, sizeof(int));
+			offset += sizeof(int);
 
-		///*	memcpy(&messageTypeNr, inputBuf, sizeof(int));
-		//	cout << messageTypeNr << endl;*/
+			memcpy(inputBuf + offset, inputMsg.data(), lengthOfMsg * sizeof(char));
+			offset += lengthOfMsg * sizeof(char);
+
+			//	//		memcpy(testPackage + offset, &messagetype, sizeof(int));
+			//	//		offset += sizeof(int);
+
+			///*	memcpy(&messageTypeNr, inputBuf, sizeof(int));
+			//	cout << messageTypeNr << endl;*/
 
 
-		//	memcpy(&parsedNumber, inputBuf, sizeof(int));
-		//	cout << "The parsed number: " << parsedNumber << endl;
+			memcpy(&parsedNumber, inputBuf, sizeof(int));
+			cout << "The parsed number: " << parsedNumber << endl;
 
 			sock->send_to(boost::asio::buffer(
-				inputMsg.c_str(), 
-				inputMsg.size()), 
+				inputBuf,
+				offset),
 				receiver_endpoint, 0);
 		}
 
