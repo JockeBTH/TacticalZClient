@@ -157,7 +157,7 @@ void ReadFromServer(socket_ptr sock, string_ptr prompt)
 			string_ptr msg(new string(readBuf, bytesRead));
 			ParseMsgType(readBuf, bytesRead);
 
-			messageQueue->push(msg);
+			//messageQueue->push(msg);
 		}
 	}
 }
