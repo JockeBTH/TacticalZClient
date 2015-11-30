@@ -6,6 +6,9 @@
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 #include <boost/algorithm/string.hpp>
+#include <Windows.h>
+#include <boost/timer/timer.hpp>
+#include <ctime>
 
 using namespace boost::asio::ip;
 using namespace std;
@@ -37,10 +40,12 @@ enum class Messages
 enum class MsgType
 {
 	Connect,
-	Ping,
+	ClientPing,
+	ServerPing,
 	Message,
 	Snapshot,
-	Disconnect
+	Disconnect,
+	Event
 
 };
 
@@ -50,6 +55,10 @@ void ReadFromServer(socket_ptr, string_ptr); //Read message from server and push
 void WriteLoop(socket_ptr, string_ptr); //Reads input from user and writes to server
 string* BuildPrompt();
 bool Receive(udp::socket sock, char* data, size_t len);
+int CreateEventMessage(int msgType, string message, char* dataLocation);
+
+std::clock_t startPingTime;
+double durationOfPingTime;
 
 udp::endpoint receiver_endpoint(address::from_string("192.168.1.6"), 13);
 messageQueue_ptr messageQueue(new queue<string_ptr>);
@@ -115,7 +124,26 @@ void ParseConnect(char* data, size_t len)
 	cout << "I am player: " << PlayerID << endl;
 }
 
-void ParseMsgType(char* data, size_t len)
+void ParsePing()
+{
+	durationOfPingTime = 1000 * (std::clock() - startPingTime) / static_cast<double>(CLOCKS_PER_SEC);
+	cout << "response time with ctime(ms): " << durationOfPingTime << endl;
+}
+
+void ParseServerPing(socket_ptr sock)
+{
+	char* testMsg = new char[128];
+	int testOffset = CreateEventMessage(static_cast<int>(MsgType::ServerPing), "Ping recieved", testMsg);
+
+	cout << "Parsing ping." << endl;
+
+	sock->send_to(boost::asio::buffer(
+		testMsg,
+		testOffset),
+		receiver_endpoint, 0);
+}
+
+void ParseMsgType(char* data, size_t len, socket_ptr sock)
 {
 	int messageType = -1;
 	int lengthOfMsg = -1;
@@ -123,24 +151,27 @@ void ParseMsgType(char* data, size_t len)
 	memcpy(&messageType, data, sizeof(int));
 	MoveMsgHead(data, len, sizeof(int));
 	
-
 	switch (static_cast<MsgType>(messageType)) {
 	case MsgType::Connect:
 		ParseConnect(data, len);
 		break;
-	case MsgType::Ping:
+	case MsgType::ClientPing:
+		ParsePing();
 		break;	
+	case MsgType::ServerPing:
+		ParseServerPing(sock);
+		break;
 	case MsgType::Message:
 		break;
 	case MsgType::Snapshot:
 		break;
 	case MsgType::Disconnect:
 		break;
+	case MsgType::Event:
+		break;
 	default:
 		break;
 	}
-
-
 
 }
 
@@ -155,78 +186,87 @@ void ReadFromServer(socket_ptr sock, string_ptr prompt)
 		{
 			bytesRead = Receive(sock, readBuf, inputSize);
 			string_ptr msg(new string(readBuf, bytesRead));
-			ParseMsgType(readBuf, bytesRead);
+			ParseMsgType(readBuf, bytesRead, sock);
 
 			//messageQueue->push(msg);
 		}
 	}
 }
 
+int CreateEventMessage(int msgType, string message, char* dataLocation)
+{
+	int lengthOfMsg = 0;
+
+	lengthOfMsg = message.size();
+
+	int offset = 0;
+	// Message type
+	memcpy(dataLocation + offset, &msgType, sizeof(int));
+	offset += sizeof(int);
+	// Length of string
+	memcpy(dataLocation + offset, &lengthOfMsg, sizeof(int));
+	offset += sizeof(int);
+	// Message
+	memcpy(dataLocation + offset, message.data(), lengthOfMsg * sizeof(char));
+	offset += lengthOfMsg * sizeof(char);
+
+	return offset;
+}
+
 void WriteLoop(socket_ptr sock, string_ptr prompt)
 {
-	char inputBuf[inputSize] = { 0 };
-	string inputMsg;
-	int messageTypeNr = -1;
-	int lengthOfMsg = 0;
-	int parsedNumber = -1;
-	char* msg = new char[128];
+	char* testMsg = new char[128];
+	int amountMessagesSent = 0;
+	int testOffset = 0;
+	bool previousKey = false;
+
 
 	for (;;)
 	{
-		cout << "Choose message type (0-4): " << endl;
-		cin >> inputMsg;
-
-		try
+		if (GetAsyncKeyState('W'))
 		{
-			messageTypeNr = std::stoi(inputMsg);
-		}
-		catch (const std::exception&)
-		{
-			
-			messageTypeNr = -1;
-		}
-		
-		cout << "Type a message: " << endl;
-		cin >> inputMsg;
-
-		//inputMsg = /**prompt + */ (string)inputBuf/* + '\n'*/;
-
-		if (!inputMsg.empty())
-		{
-			lengthOfMsg = inputMsg.size();
-
-			int offset = 0;
-			memcpy(inputBuf + offset, &messageTypeNr, sizeof(int));
-			offset += sizeof(int);
-
-			// Length of string
-			memcpy(inputBuf + offset, &lengthOfMsg, sizeof(int));
-			offset += sizeof(int);
-
-			memcpy(inputBuf + offset, inputMsg.data(), lengthOfMsg * sizeof(char));
-			offset += lengthOfMsg * sizeof(char);
-
-			//	//		memcpy(testPackage + offset, &messagetype, sizeof(int));
-			//	//		offset += sizeof(int);
-
-			///*	memcpy(&messageTypeNr, inputBuf, sizeof(int));
-			//	cout << messageTypeNr << endl;*/
-
-
-			memcpy(&parsedNumber, inputBuf, sizeof(int));
-			cout << "The parsed number: " << parsedNumber << endl;
+			int testOffset = CreateEventMessage(static_cast<int>(MsgType::Event), "+Forward", testMsg);
+			++amountMessagesSent;
+			cout << "Messages sent: " << amountMessagesSent << endl;
 
 			sock->send_to(boost::asio::buffer(
-				inputBuf,
-				offset),
+				testMsg,
+				testOffset),
 				receiver_endpoint, 0);
 		}
 
-		if (inputMsg.find("exit") != string::npos)
+		if (!previousKey &&  GetAsyncKeyState('P') )
+		{
+			int testOffset = CreateEventMessage(static_cast<int>(MsgType::ClientPing), "Ping", testMsg);
+			++amountMessagesSent;
+			cout << "Messages sent: " << amountMessagesSent << endl;
+			
+			startPingTime = std::clock();
+			sock->send_to(boost::asio::buffer(
+				testMsg,
+				testOffset),
+				receiver_endpoint, 0);
+		}
+		
+		if (GetAsyncKeyState('C'))
+		{
+			int testOffset = CreateEventMessage(static_cast<int>(MsgType::Connect), "tja", testMsg);
+			++amountMessagesSent;
+			cout << "Messages sent: " << amountMessagesSent << endl;
+
+			startPingTime = std::clock();
+			sock->send_to(boost::asio::buffer(
+				testMsg,
+				testOffset),
+				receiver_endpoint, 0);
+		}
+
+		if (GetAsyncKeyState('Q')) // Does not work. Plez fix
 			exit(1);
-		inputMsg.clear();
-		memset(inputBuf, 0, inputSize);
+		memset(testMsg, 0, inputSize);
+		previousKey = GetAsyncKeyState('P');
 	}
+
 }
 
 void DisplayLoop(socket_ptr)
