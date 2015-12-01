@@ -68,7 +68,9 @@ void ParseEventMessage(char* data, size_t len);
 void ParseConnect(char* data, size_t len);
 void ParsePing();
 void ParseServerPing(socket_ptr sock);
+void ParseSnapshot(char* data, size_t len);
 
+const int maxAmountOfConnections = 8;
 const int boardSize = 16;
 char gameBoard[boardSize][boardSize];
 PlayerPositions playerPositions[8];
@@ -134,6 +136,7 @@ void ParseMsgType(char* data, size_t len, socket_ptr sock)
 	case MsgType::Message:
 		break;
 	case MsgType::Snapshot:
+		ParseSnapshot(data, len);
 		break;
 	case MsgType::Disconnect:
 		break;
@@ -246,6 +249,45 @@ void DisplayLoop(socket_ptr)
 			}
 			messageQueue->pop();
 		}
+
+		// Update gameboard
+		for (size_t i = 0; i < boardSize; i++)
+		{
+			for (size_t j = 0; j < boardSize; j++)
+			{
+				gameBoard[j][i] = ' ';
+			}
+		}
+		for (size_t i = 0; i < maxAmountOfConnections; i++)
+		{
+			if (playerPositions[i].x != -1 && playerPositions[i].y != -1)
+			{ 
+				if(i == PlayerID)
+					gameBoard[playerPositions[i].x][playerPositions[i].y] = 'O';
+				else
+					gameBoard[playerPositions[i].x][playerPositions[i].y] = 'X';
+			}
+		}
+		system("cls");
+		for (size_t i = 0; i < boardSize; i++)
+		{
+			cout << '_';
+		}
+		cout << endl;
+		for (size_t i = 0; i < boardSize; i++)
+		{
+			for (size_t j = 0; j < boardSize; j++)
+			{
+				cout << gameBoard[j][i];
+			}
+			cout << endl;
+		}
+		for (size_t i = 0; i < boardSize; i++)
+		{
+			cout << "^";
+		}
+		boost::this_thread::sleep(boost::posix_time::millisec(100));
+
 	}
 }
 
@@ -329,8 +371,16 @@ void ParseEventMessage(char* data, size_t len)
 	MoveMsgHead(data, len, string(data).size() + 1);
 }
 
-
-
+void ParseSnapshot(char* data, size_t len)
+{
+	for (size_t i = 0; i < maxAmountOfConnections; i++)
+	{
+		memcpy(&playerPositions[i].x, data, sizeof(int));
+		MoveMsgHead(data, len, sizeof(int));
+		memcpy(&playerPositions[i].y, data, sizeof(int));
+		MoveMsgHead(data, len, sizeof(int));
+	}
+}
 
 
 int CreateEventMessage(MsgType msgType, string message, char* dataLocation)
